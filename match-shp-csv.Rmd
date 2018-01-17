@@ -1,0 +1,80 @@
+---
+title: "shapeファイルとcsvを結合して空間データ分析をする"
+author: "NAKAJIMA Yukihiro"
+date: "2018年1月10日"
+output:
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r package, include=FALSE}
+library(readr)
+library(dplyr)
+library(sf)
+library(spdep)
+```
+
+
+## このページの目的
+
+慶應SFC 2017年秋学期開口科目Data Science for Environmental Governance(Spatial Data Modeling)においてあまり扱わなかった空間データとcsvデータを結合する方法を解説することです。
+具体的にはRを用いてshapeファイルとcsvデータを結合し、図に表し、Moran's Iを計算するぐらいまでは解説したいと思います。
+
+## 利用するデータ
+今回利用するデータはGitHubにて公開しています(<https://github.com/N-Yukihiro/lectute_2017_spatial>)。
+shapeファイルは国土数値情報ダウンロードサービス(<http://nlftp.mlit.go.jp/ksj/index.html>)より東京都の行政区域をダウンロードしました。
+そして、今回は空間データ分析によく利用される地価を分析したいと思います。
+地価は平成29年地価公示価格（東京都分）(<http://www.zaimu.metro.tokyo.jp/kijunchi/29kouji/index.html>)より23区に該当する地域の住宅地価をcsvに直してlandprice.csvとして保存しています。
+
+## 実践
+まずは今回利用するパッケージをインストールし、読み込みます。
+```{r install, echo=TRUE, eval=FALSE}
+ install.packages(c("readr", "dplyr", "sf", "tmap", "spdep"))
+```
+
+```{r library, echo=TRUE, eval=FALSE}
+library(readr)
+library(dplyr)
+library(sf)
+library(tmap)
+library(spdep)
+```
+`readr`はcsvなどを読み込むため、`dplyr`はデータフレームを操作するため、`sf`は空間データを操作するため、`tmap`は空間データを図に表すため、`spdep`は空間データ分析のために使います。
+
+```{r read_csv, message=FALSE, warning=FALSE}
+land_price <-　readr::read_csv("landprice.csv", locale = locale(encoding = "cp932")) %>% 
+  mutate(code_f = as.factor(code))
+```
+上のコードでは`readr`パッケージの中の`read_csv`関数を利用してcsvファイルを読み込み`land_price`という変数に格納しています。。
+`locale=locale(encoding="cp932")`でShift-JISで読み込むことを指定しています。
+次の行で整数値として格納されている市町村コードをファクターに直しています。
+
+```{r st_read, message=FALSE, warning=FALSE}
+Dist <- sf::st_read(dsn = "shape", layer = "N03-17_13_170101",options = "ENCODING=cp932")
+```
+このコードでは`sf`パッケージの中の`st_read`関数を利用してshapeファイルを読み込み`Dist`という変数に格納しています。
+`dsn`でshapeファイルが入っているフォルダを指定し、`layer`でshaperファイルを指定します。
+`layer`を指定するときに拡張子は書きません。
+
+```{r}
+match <- dplyr::inner_join(Dist, land_price, by = c("N03_007" = "code_f"))
+```
+読み込んだcsvとshapeファイルを1つのファイルにする操作をしています。
+そのために`dplyr`パッケージの中の`inner_join`関数を利用しています。
+はじめの2つの引数でマッチさせたいデータを指定します。
+最初の引数にshapeファイルを指定して、第二引数にcsvファイルを指定しましょう。
+
+
+`inner_join`関数を使うとキーになる列名を指定します。
+今回は列名がそれぞれのデータで異なるので、`by = c("column_name1" = "column_name2")`とします。
+
+```{r}
+match %>% 
+  select(LandPrice) %>% 
+  plot()
+```
+
