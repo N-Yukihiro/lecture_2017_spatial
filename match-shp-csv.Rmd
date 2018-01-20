@@ -16,65 +16,172 @@ library(readr)
 library(dplyr)
 library(sf)
 library(spdep)
+library(ggplot2)
+library(methods)
 ```
 
+# このページの目的
 
-## このページの目的
-
-慶應SFC 2017年秋学期開口科目Data Science for Environmental Governance(Spatial Data Modeling)においてあまり扱わなかった空間データとcsvデータを結合する方法を解説することです。
+慶應SFC 2017年秋学期開口科目Data Science for Environmental Governance(Spatial Data Modeling)においてあまり扱わなかった空間データとcsvデータを結合し、空間データ分析を行う方法を解説することです。
 具体的にはRを用いてshapeファイルとcsvデータを結合し、図に表し、Moran's Iを計算するぐらいまでは解説したいと思います。
 
-## 利用するデータ
+# 利用するデータ
 今回利用するデータはGitHubにて公開しています(<https://github.com/N-Yukihiro/lectute_2017_spatial>)。
 shapeファイルは国土数値情報ダウンロードサービス(<http://nlftp.mlit.go.jp/ksj/index.html>)より東京都の行政区域をダウンロードしました。
 そして、今回は空間データ分析によく利用される地価を分析したいと思います。
 地価は平成29年地価公示価格（東京都分）(<http://www.zaimu.metro.tokyo.jp/kijunchi/29kouji/index.html>)より23区に該当する地域の住宅地価をcsvに直してlandprice.csvとして保存しています。
 
-## 実践
+# 実践
+## パッケージのインストールと読み込み
 まずは今回利用するパッケージをインストールし、読み込みます。
+
 ```{r install, echo=TRUE, eval=FALSE}
- install.packages(c("readr", "dplyr", "sf", "tmap", "spdep"))
+install.packages(c("readr", "dplyr", "sf", "devtools","methods", "spdep"))
+devtools::install_github("tidyverse/ggplot2")
 ```
 
 ```{r library, echo=TRUE, eval=FALSE}
 library(readr)
 library(dplyr)
 library(sf)
-library(tmap)
+library(ggplot2)
+library(methods)
 library(spdep)
 ```
-`readr`はcsvなどを読み込むため、`dplyr`はデータフレームを操作するため、`sf`は空間データを操作するため、`tmap`は空間データを図に表すため、`spdep`は空間データ分析のために使います。
 
-```{r read_csv, message=FALSE, warning=FALSE}
-land_price <-　readr::read_csv("landprice.csv", locale = locale(encoding = "cp932")) %>% 
+`readr`はcsvなどを読み込むため、`dplyr`はデータフレームを操作するため、`sf`は空間データを操作するため、`ggplot2`は空間データを図に表すため、`methods`は`sf`パッケージで読み込んだデータを`spdep`パッケージで扱えるように変換するため、`spdep`は空間データ分析のために使います。
+
+## データの読み込み
+
+```{r read_csv, message=FALSE, warning=FALSE,results='hide'}
+land_price <- readr::read_csv("landprice.csv", locale = locale(encoding = "cp932")) %>% 
   mutate(code_f = as.factor(code))
 ```
-上のコードでは`readr`パッケージの中の`read_csv`関数を利用してcsvファイルを読み込み`land_price`という変数に格納しています。。
+
+上のコードでは`readr`パッケージの中の`read_csv`関数を利用してcsvファイルを読み込み`land_price`という変数に格納しています。
 `locale=locale(encoding="cp932")`でShift-JISで読み込むことを指定しています。
 次の行で整数値として格納されている市町村コードをファクターに直しています。
 
-```{r st_read, message=FALSE, warning=FALSE}
-Dist <- sf::st_read(dsn = "shape", layer = "N03-17_13_170101",options = "ENCODING=cp932")
+```{r st_read, message=FALSE, warning=FALSE,results='hide'}
+Dist <- sf::st_read(dsn = "shape", layer = "N03-17_13_170101",options = "ENCODING=cp932") %>% 
+  dplyr::group_by(N03_007) %>%
+  dplyr::summarise(geometry = st_union(geometry)) %>%
+  dplyr::ungroup()
 ```
+
 このコードでは`sf`パッケージの中の`st_read`関数を利用してshapeファイルを読み込み`Dist`という変数に格納しています。
 `dsn`でshapeファイルが入っているフォルダを指定し、`layer`でshaperファイルを指定します。
+Rのコードとshapeファイルが同じフォルダに入っている場合には`dsn = getwd()`とします。
 `layer`を指定するときに拡張子は書きません。
 
-```{r}
+2行名以降では海を跨いでマルチフィーチャーになっているデータをシングルフィーチャーに直しています。
+
+## データの結合
+
+```{r match, message=FALSE, warning=FALSE,results='hide'}
 match <- dplyr::inner_join(Dist, land_price, by = c("N03_007" = "code_f"))
 ```
-読み込んだcsvとshapeファイルを1つのファイルにする操作をしています。
+
+読み込んだcsvとshapeファイルを1つのファイルに結合する操作をしています。
 そのために`dplyr`パッケージの中の`inner_join`関数を利用しています。
 はじめの2つの引数でマッチさせたいデータを指定します。
 最初の引数にshapeファイルを指定して、第二引数にcsvファイルを指定しましょう。
 
-
-`inner_join`関数を使うとキーになる列名を指定します。
+そして、`inner_join`関数を使う際にキーになる列名を指定します。
 今回は列名がそれぞれのデータで異なるので、`by = c("column_name1" = "column_name2")`とします。
 
-```{r}
+`inner_join`関数では、お互いのデータセットで共通するキーが存在するもののみデータを残します。
+詳しくは`dplyr`の使い方を調べてみてください。
+
+## データの表示
+
+```{r plot, message=FALSE, warning=FALSE, include=TRUE}
 match %>% 
-  select(LandPrice) %>% 
+  dplyr::select(LandPrice) %>% 
   plot()
 ```
 
+まずはオーソドックスな`plot`による表示です。
+`plot`では全ての列を表示してしまうので、`select`を使って表示する列だけを選択しています。
+
+```{r easy_plot, message=FALSE, warning=FALSE, include=TRUE}
+plot(match["LandPrice"])
+```
+
+もっと簡単に上のようなコードで表示することも可能です。
+
+```{r ggplot, message=FALSE, warning=FALSE, include=TRUE}
+ggplot2::ggplot(data = match) +
+  ggplot2::geom_sf(aes(fill = LandPrice))
+```
+
+最後に`ggplot2`による地図の表示の仕方を紹介します。
+`sf`パッケージで読み込んだファイルは`ggplot2`パッケージの`geom_sf`関数で簡単に表示することができます。
+まず、`ggplot(data=data)`で利用するデータを指定し、`geom_sf(aes(fill=column_name))`で表示したい列名を指定します。
+`geom_sf`では、`sp`パッケージなどの`sf`パッケージ以外で読み込んだファイルは表示できないことに注意してください。
+
+私は`tmap`による描画もけっこう好きなのですが、なぜか私のWindowsで動かないので割愛します。
+ちなみに普段はBash on Ubuntu on Windowsで`tmap`を動かしています。
+
+## Moran's Iの計算
+
+空間的自己相関を表す代表的な指標であるMoran's Iを計算してみましょう。
+空間的自己相関を計算するためにはまず接続行列を与える必要があります。
+
+```{r create_nb, echo=TRUE, message=FALSE, warning=FALSE}
+coords <- sp::coordinates(methods::as(match, "Spatial"))
+match_Delaunay_nb <- spdep::tri2nb(coords)
+match_simple_nb <- spdep::poly2nb(methods::as(match, "Spatial"), queen=F)
+```
+
+まず、`sf`パッケージで読み込んだデータを`spdep`が扱えるようにデータを変換してmatchファイルの緯度経度を求めます。
+そして、`tri2nb`を使ってドロネーの三角網によって接続関係を与えます。
+`poly2nb`を使うと単純接続によって隣接を与えます。
+
+```{r Delaunay_plot, message=FALSE, warning=FALSE, include=TRUE}
+plot(methods::as(match, "Spatial"))
+par(new=T)
+plot(match_Delaunay_nb,coords=coords, add=TRUE, pch=16, col='darkred')
+```
+
+ドロネーの三角網によって、このように接続関係が与えられています。
+
+```{r simple_plot, message=FALSE, warning=FALSE, include=TRUE}
+plot(methods::as(match, "Spatial"))
+par(new=T)
+plot(match_simple_nb,coords=coords, add=TRUE, pch=16, col='darkred')
+```
+
+単純接続によって、このように接続関係が与えられています。
+
+それではこれらを使ってMoran's Iを求めてみましょう。
+Moran's Iは次の数式の通りです。
+
+$$
+I = \frac{n}{S_0}\frac{\Sigma_{i=1}^{n}\Sigma_{j=1}^{n}w_{ij}(y_i-\overline{y})(y_j-\overline{y})}{\Sigma_{i=1}^{n}(y_i-\overline{y})}.
+$$
+
+```{r moran_Delaunay, echo=TRUE, message=FALSE}
+spdep::moran.test(match$LandPrice, nb2listw (match_Delaunay_nb, style="W"))
+```
+
+ドロネーの三角網によって与えた接続を利用してMoran's Iを計算します。
+
+
+```{r moran_simple, echo=TRUE, message=FALSE}
+spdep::moran.test(match$LandPrice, nb2listw (match_simple_nb, style="W"))
+```
+最後に単純接続によって与えた接続を利用してMoran's Iを計算します。
+
+以上で簡単でしたが、shapeファイルとcsvを結合して空間データ分析をするための解説でした。
+質問があれば、ご連絡ください。
+
+# その他のRの使い方について
+
+Rの使用方法については日本語、英語を問わず多くの資料がインターネット上に公開されています。
+
+一応今までに私が作成したスライドなどは<https://n-yukihiro.github.io/post/slides/>にまとめています。
+具体的には`dplyr`や`ggplot2`の使い方などを示しています。
+
+\Huge
+Enjoy!
