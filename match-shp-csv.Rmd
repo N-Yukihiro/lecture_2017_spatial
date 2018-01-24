@@ -18,6 +18,7 @@ library(sf)
 library(spdep)
 library(ggplot2)
 library(methods)
+library(DT)
 ```
 
 # このページの目的
@@ -50,6 +51,7 @@ library(spdep)
 ```
 
 `readr`はcsvなどを読み込むため、`dplyr`はデータフレームを操作するため、`sf`は空間データを操作するため、`ggplot2`は空間データを図に表すため、`methods`は`sf`パッケージで読み込んだデータを`spdep`パッケージで扱えるように変換するため、`spdep`は空間データ分析のために使います。
+なお、`ggplot2`は開発版を使います。
 
 ## データの読み込み
 
@@ -61,6 +63,13 @@ land_price <- readr::read_csv("landprice.csv", locale = locale(encoding = "cp932
 上のコードでは`readr`パッケージの中の`read_csv`関数を利用してcsvファイルを読み込み`land_price`という変数に格納しています。
 `locale=locale(encoding="cp932")`でShift-JISで読み込むことを指定しています。
 次の行で整数値として格納されている市町村コードをファクターに直しています。
+
+```{r LP_DT, echo=FALSE, include=TRUE}
+ #DataTableパッケージ
+DT::datatable(land_price,
+              rownames = FALSE)
+```
+データとしてはこのようになっています。
 
 ```{r st_read, message=FALSE, warning=FALSE,results='hide'}
 Dist <- sf::st_read(dsn = "shape", layer = "N03-17_13_170101",options = "ENCODING=cp932") %>% 
@@ -75,6 +84,13 @@ Rのコードとshapeファイルが同じフォルダに入っている場合�
 `layer`を指定するときに拡張子は書きません。
 
 2行名以降では海を跨いでマルチフィーチャーになっているデータをシングルフィーチャーに直しています。
+
+```{r Dist_DT, echo=FALSE, include=TRUE}
+ #DataTableパッケージ
+DT::datatable(Dist,
+              rownames = FALSE)
+```
+データの部分(dbfファイルにあたる)はこのようになっています。
 
 ## データの結合
 
